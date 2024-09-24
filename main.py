@@ -61,7 +61,10 @@ def preprocessing():
     categorical_encoded = encoder.fit_transform(categorical_df)
     categorical_encoded_df = pd.DataFrame(categorical_encoded, columns=encoder.get_feature_names_out(categorical_cols))
 
-    df = pd.concat([numerical_scaled_df, categorical_encoded_df, y], axis = 1)
+    categorical_scaled = scalar.fit_transform(categorical_encoded_df)
+    categorical_scaled_df = pd.DataFrame(categorical_scaled, columns=encoder.get_feature_names_out(categorical_cols))
+
+    df = pd.concat([numerical_scaled_df, categorical_scaled_df, y], axis = 1)
 
     X_final = df.drop(columns=['y'])
     y_final = df['y']
