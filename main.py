@@ -71,17 +71,94 @@ def preprocessing():
 
     return X_final, y_final
 
-def NaiveBayes(X, y):
-    print("NaiveBayes")
+def train_test_split(X, y, test_size):
+    X = np.array(X)
+    y = np.array(y)
+    
+    np.random.seed(42)
+    
+    indices = np.arange(X.shape[0])
+    np.random.shuffle(indices)
+    
+    split_index = int((1 - test_size) * len(indices))
+    
+    train_indices = indices[:split_index]
+    test_indices = indices[split_index:]
+    
+    X_train, X_test = X[train_indices], X[test_indices]
+    y_train, y_test = y[train_indices], y[test_indices]
+    
+    return X_train, y_train, X_test, y_test
 
-def LogisticRegression(X, y):
-    print("LogisticRegression")
+class NaiveBayes:
+    def __init__(self):
+        # Initialize parameters like weights (theta) if needed
+        self = None
 
-def MultilayerPerceptron(X, y):
-    print("MultilayerPerceptron")   
+    def fit(self, X, y):
+        # Fit the model
+        print("Training the model...")
+
+    def predict(self, X):
+        # Predict code here
+        print("Predicting...")
+
+class LogisticRegression:
+    def __init__(self):
+        # Initialize parameters like weights (theta) if needed
+        self = None
+
+    def fit(self, X, y):
+        # Fit the model
+        print("Training the model...")
+
+    def predict(self, X):
+        # Predict code here
+        print("Predicting...")
+
+class MultilayerPerceptron:
+    def __init__(self):
+        # Initialize parameters like weights (theta) if needed
+        self = None
+
+    def fit(self, X, y):
+        # Fit the model
+        print("Training the model...")
+
+    def predict(self, X):
+        # Predict code here
+        print("Predicting...")   
 
 def main():
     X, y = preprocessing()
+    X_train, y_train, X_test, y_test = train_test_split(X, y, test_size=0.2)
+
+    # Define Naive Bayes
+    NaiveModel = NaiveBayes()
+    NaiveModel.fit(X_train, y_train)
+    NaivePredictions = NaiveModel.predict(X_test)
+
+    # Measure Niave Bayes Accuracy
+    correctNaive = np.sum(y_test == NaivePredictions)
+    accuracyNaive = correctNaive / len(y_test)
+
+    # Define Logistic Regression
+    logisticModel = LogisticRegression()
+    logisticModel.fit(X_train, y_train)
+    logisticPredictions = logisticModel.predict(X_test)
+
+    # Measure Logistic Regression Accuracy
+    correctLogistic = np.sum(y_test == logisticPredictions)
+    accuracyLogistic = correctLogistic / len(y_test)
+
+    # Define Multilayer Perceptron
+    MLPModel = MultilayerPerceptron()
+    MLPModel.fit(X_train, y_train)
+    MLPPredictions = MLPModel.predict(X_test)
+
+    # Measure Multilayer Perceptron Accuracy
+    correctMLP = np.sum(y_test == MLPPredictions)
+    accuracyMLP = correctMLP / len(y_test)
 
 if __name__ == '__main__':
     main()  
