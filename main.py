@@ -1,22 +1,34 @@
 import pandas as pd
 import numpy as np
-from imblearn.under_sampling import RandomUnderSampler
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from scipy.stats import norm
+import torch
+import torch.nn as nn
+import torch.optim as optim
 
 def preprocessing():
     data = pd.read_csv('marketing_data.csv', delimiter=';')
     X = data.drop(columns=['y', 'default'])
     y = data['y']
 
-    # Convert target 'y' to binary numerical values
     y = y.map({'yes': 1, 'no': 0})
 
-    # Handle class imbalance using undersampling
-    rus = RandomUnderSampler(sampling_strategy=0.75, random_state=42)
-    X, y = rus.fit_resample(X, y)
+    np.random.seed(42)
+    
+    class_0_indices = y[y == 0].index
+    class_1_indices = y[y == 1].index
+    
+    n_class_1 = len(class_1_indices)
+    n_class_0 = int(n_class_1 / 0.83)
+    
+    class_0_sample_indices = np.random.choice(class_0_indices, size=n_class_0, replace=False)
+    
+    undersampled_indices = np.concatenate([class_0_sample_indices, class_1_indices])
+    
+    np.random.shuffle(undersampled_indices)
+    
+    X = X.loc[undersampled_indices].reset_index(drop=True)
+    y = y.loc[undersampled_indices].reset_index(drop=True)
 
-    # Map months to quarters and simplify job categories
     month_to_quarter = {
         'jan': 'Q1', 'feb': 'Q1', 'mar': 'Q1',
         'apr': 'Q2', 'may': 'Q2', 'jun': 'Q2',
@@ -42,24 +54,26 @@ def preprocessing():
     }
     X['job'] = X['job'].map(job_mapping)
 
-    # One-hot encode categorical columns
     numerical_cols = X.select_dtypes(include=['int64', 'float64']).columns
     categorical_cols = X.select_dtypes(include=['object']).columns
-    scaler = StandardScaler()
-    X[numerical_cols] = scaler.fit_transform(X[numerical_cols])
-
-    encoder = OneHotEncoder(sparse_output=False)
-    categorical_encoded = encoder.fit_transform(X[categorical_cols])
-    categorical_encoded_df = pd.DataFrame(categorical_encoded, columns=encoder.get_feature_names_out(categorical_cols))
-
-    # Combine the scaled numerical and encoded categorical data
-    X_final = pd.concat([pd.DataFrame(X[numerical_cols], columns=numerical_cols).reset_index(drop=True), 
-                         categorical_encoded_df.reset_index(drop=True)], axis=1)
     
-    # Ensure `X_final` and `y` have the same length
-    assert X_final.shape[0] == y.shape[0], "Mismatch between X_final and y length"
-    
-    return X_final, y.reset_index(drop=True)
+    for col in numerical_cols:
+        mean = X[col].mean()
+        std = X[col].std()
+        X[col] = (X[col] - mean) / std
+
+    X_encoded = pd.get_dummies(X, columns=categorical_cols, drop_first=False)
+
+    encoded_cols = X_encoded.columns.difference(numerical_cols)
+    for col in encoded_cols:
+        mean = X_encoded[col].mean()
+        std = X_encoded[col].std()
+        X_encoded[col] = (X_encoded[col] - mean) / std
+
+    X_final = X_encoded.reset_index(drop=True)
+    y_final = y.reset_index(drop=True)
+
+    return X_final, y_final
 
 def train_test_split(X, y, test_size):
     X = np.array(X)
@@ -74,7 +88,6 @@ def train_test_split(X, y, test_size):
     y_train, y_test = y[train_indices], y[test_indices]
     return X_train, y_train, X_test, y_test
 
-# Naive Bayes Implementation
 class NaiveBayes:
     def __init__(self):
         self.classes = None
@@ -102,7 +115,6 @@ class NaiveBayes:
             predictions.append(self.classes[np.argmax(posteriors)])
         return np.array(predictions)
 
-# Logistic Regression Implementation
 class LogisticRegression:
     def __init__(self, lr=0.01, epochs=1000):
         self.lr = lr
@@ -111,8 +123,7 @@ class LogisticRegression:
         self.bias = None
 
     def sigmoid(self, z):
-    # Clip the values of z to prevent overflow in exp
-        z = np.clip(z, -500, 500)  # Limits z to a range between -500 and 500
+        z = np.clip(z, -500, 500)
         return 1 / (1 + np.exp(-z))
     
     def fit(self, X, y):
@@ -132,64 +143,68 @@ class LogisticRegression:
         y_pred = self.sigmoid(linear_model)
         return np.where(y_pred > 0.5, 1, 0)
 
-# Multilayer Perceptron (MLP) Implementation
-class MultilayerPerceptron:
-    def __init__(self, hidden_size=10, lr=0.01, epochs=1000):
-        self.lr = lr
-        self.epochs = epochs
-        self.hidden_size = hidden_size
-        self.input_weights = None
-        self.hidden_weights = None
 
-    def sigmoid(self, z):
-        # Clip the values of z to prevent overflow in exp
-        z = np.clip(z, -500, 500)  # Limits z to a range between -500 and 500
-        return 1 / (1 + np.exp(-z))
+class MultilayerPerceptron(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super(MultilayerPerceptron, self).__init__()
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.relu = nn.ReLU()                          
+        self.fc2 = nn.Linear(hidden_size, output_size)
+        self.softmax = nn.Softmax(dim=1)
 
-    def fit(self, X, y):
-        n_samples, n_features = X.shape
-        self.input_weights = np.random.randn(n_features, self.hidden_size)
-        self.hidden_weights = np.random.randn(self.hidden_size, 1)
-        for _ in range(self.epochs):
-            # Forward pass
-            hidden_input = np.dot(X, self.input_weights)
-            hidden_output = self.sigmoid(hidden_input)
-            output = self.sigmoid(np.dot(hidden_output, self.hidden_weights))
-            
-            # Backpropagation
-            output_error = output - y.reshape(-1, 1)
-            hidden_error = np.dot(output_error, self.hidden_weights.T) * hidden_output * (1 - hidden_output)
-            
-            self.hidden_weights -= self.lr * np.dot(hidden_output.T, output_error)
-            self.input_weights -= self.lr * np.dot(X.T, hidden_error)
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        x = self.softmax(x)
+        return x
+
+    def fit(self, X, y, epochs=1000):
+        X_tensor = torch.tensor(np.array(X), dtype=torch.float32)
+        y_tensor = torch.tensor(np.array(y), dtype=torch.long)
+
+        optimizer = optim.Adam(self.parameters(), lr=0.1)
+        criterion = nn.CrossEntropyLoss()
+
+        for epoch in range(epochs):
+            outputs = self.forward(X_tensor)
+            loss = criterion(outputs, y_tensor)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
     def predict(self, X):
-        hidden_output = self.sigmoid(np.dot(X, self.input_weights))
-        output = self.sigmoid(np.dot(hidden_output, self.hidden_weights))
-        return np.where(output > 0.5, 1, 0)
-# Main function
+        X_tensor = torch.tensor(np.array(X), dtype=torch.float32)
+        with torch.no_grad():
+            outputs = self.forward(X_tensor)
+            _, predicted = torch.max(outputs, 1)
+        return predicted.numpy()
+        
+
 def main():
-    X, y = preprocessing()  # Preprocess the data and ensure alignment
+    X, y = preprocessing()
     X_train, y_train, X_test, y_test = train_test_split(X, y, test_size=0.2)
 
-    print(f"Shapes -> X_train: {X_train.shape}, y_train: {y_train.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
 
-    # Naive Bayes Model
     naive_bayes = NaiveBayes()
     naive_bayes.fit(X_train, y_train)
     nb_predictions = naive_bayes.predict(X_test)
     nb_accuracy = np.mean(nb_predictions == y_test)
     print(f"Naive Bayes Accuracy: {nb_accuracy:.4f}")
 
-    # Logistic Regression Model
+    
     logistic_regression = LogisticRegression()
     logistic_regression.fit(X_train, y_train)
     lr_predictions = logistic_regression.predict(X_test)
     lr_accuracy = np.mean(lr_predictions == y_test)
     print(f"Logistic Regression Accuracy: {lr_accuracy:.4f}")
 
-    # Multilayer Perceptron Model
-    mlp = MultilayerPerceptron()
+    
+    input_size = X_train.shape[1]
+    hidden_size = 50
+    output_size = len(np.unique(y_train))  
+    mlp = MultilayerPerceptron(input_size, hidden_size, output_size)
     mlp.fit(X_train, y_train)
     mlp_predictions = mlp.predict(X_test)
     mlp_accuracy = np.mean(mlp_predictions == y_test)
